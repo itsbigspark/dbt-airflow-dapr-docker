@@ -1,0 +1,113 @@
+node "common_network" <<network>> as 41ddba37f92104ccdebe6d23bb014f20
+node "Postgres-airflow" as a8d8f463a23da610f61f308b964d6e84 {
+  component b924ff85b6c5531d7140312889658715 [
+    Postgres-airflow
+    image: postgres
+    restart: always
+  ]
+  artifact "/docker-entrypoint-initdb.d" as d3548f346f379ced667ab6d1d21bac96
+}
+node "Postgres-dbt" as d381086cfdd56fc491bf66db288ae880 {
+  component 0ab33a41c95f7dc0968a2e562e058976 [
+    Postgres-dbt
+    image: postgres
+    restart: always
+  ]
+  artifact "/sample_data" as 53a6e7d1c63665cf6e468fbd4ffb9398
+}
+node "Airflow" as 2528f15a184a14d75d2e092e396dd03e {
+  component f7b2cf6862952c80a6e467118b5b6668 [
+    Airflow
+    restart: always
+  ]
+  () "8080" as 4995708fd32ddfb9fb466b5ed3c242eb
+  artifact "/dbt" as c1662c763366eb340fb6cefc460d944b
+  artifact "/airflow" as 3830c96b902e1cb856ba1714027461ed
+}
+node "Adminer" as 1e5334caed399aed8b9abba51ee8bb94 {
+  component aefa567354dbf86e5f8a43eeb9b67635 [
+    Adminer
+    image: adminer
+    restart: always
+  ]
+  () "8080" as ed7ea3f61b7fb6e0ece895fc178771cd
+}
+node "Nodeapp" as fac03859db223ec7b1b54e6e99a4b546 {
+  component d484656a638541fc978058f47a4b0a06 [
+    Nodeapp
+  ]
+  () "50002" as 8a725c8d1ad9eb4d7171c74f9d83bc84
+}
+node "Nodeapp-dapr" as 74d13128e3a3cc07ed584dba415c9472 {
+  component 26033536e1450268a401b2f366a6f6f9 [
+    Nodeapp-dapr
+    image: daprio/daprd:edge
+  ]
+  artifact "/components" as 0c089d4b150b18ba3d7c19cdf7135d6e
+}
+node "Pythonapp" as 9bd71efcc064e88932d925ea6babe90f {
+  component 08db614d7ad647cbb1918009cf30735c [
+    Pythonapp
+  ]
+}
+node "Pythonapp-dapr" as 1c51773825e3c6a4a6f67bca7162ac03 {
+  component 946d8d37aea6f73cd74fa4a509fa70c2 [
+    Pythonapp-dapr
+    image: daprio/daprd:edge
+  ]
+  artifact "/components" as e7828a0669d93fd388f5afe61660cc72
+}
+node "Placement" as 2a5540b421ce0577456c823d81fcd010 {
+  component 7a9d6447bd3023c6acbd3530c341bc21 [
+    Placement
+    image: daprio/dapr
+  ]
+  () "50006" as c86ea2343df570fe171e1c32cfefc6f7
+}
+node "Redis" as 86a1b907d54bf7010394bf316e183e67 {
+  component 3c217ea98bfddc0f9ff1c849de325d93 [
+    Redis
+    image: redis:alpine
+  ]
+  () "6379" as 09876deab5af8de0c168ec3aa053742d
+}
+artifact "./scripts_postgres" as e3362b18013bc17c1625f8de930788bd
+artifact "./sample_data" as d6a815b5edd04fe5ca40ba7fdfdbb01e
+artifact "./dbt" as eba5aa6369ff7ae90b33dcbbde4f8147
+artifact "./airflow" as 5d92a652076adf8e71fff2f285dca598
+artifact "./dapr/components/" as 0f8d96ed4b952b710308b1c9d34dcd46
+() "8000" as 1624c420083928ef3e240dd88f2e52f0
+() "8080" as 600c44c1349e9154dce569ba37e2d70b
+() "50002" as e13e4af5368c96d850dbfe99ca6567f6
+() "50006" as a34e4cb1ba64f2c9c20de3c13666bae0
+() "6380" as 54658f9b749aad97913bdda65c12c075
+d3548f346f379ced667ab6d1d21bac96 -d- e3362b18013bc17c1625f8de930788bd : rw
+b924ff85b6c5531d7140312889658715 ..d..> d3548f346f379ced667ab6d1d21bac96 : use
+a8d8f463a23da610f61f308b964d6e84 -u-> 41ddba37f92104ccdebe6d23bb014f20
+53a6e7d1c63665cf6e468fbd4ffb9398 -d- d6a815b5edd04fe5ca40ba7fdfdbb01e : rw
+0ab33a41c95f7dc0968a2e562e058976 ..d..> 53a6e7d1c63665cf6e468fbd4ffb9398 : use
+d381086cfdd56fc491bf66db288ae880 -u-> 41ddba37f92104ccdebe6d23bb014f20
+f7b2cf6862952c80a6e467118b5b6668 -d- 4995708fd32ddfb9fb466b5ed3c242eb
+4995708fd32ddfb9fb466b5ed3c242eb -d- 1624c420083928ef3e240dd88f2e52f0
+c1662c763366eb340fb6cefc460d944b -d- eba5aa6369ff7ae90b33dcbbde4f8147 : rw
+f7b2cf6862952c80a6e467118b5b6668 ..d..> c1662c763366eb340fb6cefc460d944b : use
+3830c96b902e1cb856ba1714027461ed -d- 5d92a652076adf8e71fff2f285dca598 : rw
+f7b2cf6862952c80a6e467118b5b6668 ..d..> 3830c96b902e1cb856ba1714027461ed : use
+2528f15a184a14d75d2e092e396dd03e -u-> 41ddba37f92104ccdebe6d23bb014f20
+aefa567354dbf86e5f8a43eeb9b67635 -d- ed7ea3f61b7fb6e0ece895fc178771cd
+ed7ea3f61b7fb6e0ece895fc178771cd -d- 600c44c1349e9154dce569ba37e2d70b
+1e5334caed399aed8b9abba51ee8bb94 -u-> 41ddba37f92104ccdebe6d23bb014f20
+d484656a638541fc978058f47a4b0a06 -d- 8a725c8d1ad9eb4d7171c74f9d83bc84
+8a725c8d1ad9eb4d7171c74f9d83bc84 -d- e13e4af5368c96d850dbfe99ca6567f6
+fac03859db223ec7b1b54e6e99a4b546 -u-> 41ddba37f92104ccdebe6d23bb014f20
+0c089d4b150b18ba3d7c19cdf7135d6e -d- 0f8d96ed4b952b710308b1c9d34dcd46 : rw
+26033536e1450268a401b2f366a6f6f9 ..d..> 0c089d4b150b18ba3d7c19cdf7135d6e : use
+9bd71efcc064e88932d925ea6babe90f -u-> 41ddba37f92104ccdebe6d23bb014f20
+e7828a0669d93fd388f5afe61660cc72 -d- 0f8d96ed4b952b710308b1c9d34dcd46 : rw
+946d8d37aea6f73cd74fa4a509fa70c2 ..d..> e7828a0669d93fd388f5afe61660cc72 : use
+7a9d6447bd3023c6acbd3530c341bc21 -d- c86ea2343df570fe171e1c32cfefc6f7
+c86ea2343df570fe171e1c32cfefc6f7 -d- a34e4cb1ba64f2c9c20de3c13666bae0
+2a5540b421ce0577456c823d81fcd010 -u-> 41ddba37f92104ccdebe6d23bb014f20
+3c217ea98bfddc0f9ff1c849de325d93 -d- 09876deab5af8de0c168ec3aa053742d
+09876deab5af8de0c168ec3aa053742d -d- 54658f9b749aad97913bdda65c12c075
+86a1b907d54bf7010394bf316e183e67 -u-> 41ddba37f92104ccdebe6d23bb014f20
