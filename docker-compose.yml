@@ -80,6 +80,69 @@ services:
     networks:
       - common_network
 
+  nodeapp:
+    build: ./dapr/node
+    ports:
+      - "50002:50002"
+    depends_on:
+      - redis
+      - placement
+    networks:
+      - common_network
+  nodeapp-dapr:
+    image: "daprio/daprd:edge"
+    command: ["./daprd",
+      "-app-id", "nodeapp",
+      "-app-port", "3000",
+      "-placement-host-address", "placement:50006",
+      "-dapr-grpc-port", "50002",
+      "-components-path", "/components"]
+    volumes:
+        - "./dapr/components/:/components"
+    depends_on:
+      - nodeapp
+    network_mode: "service:nodeapp"
+  ############################
+  # Python app + Dapr sidecar
+  ############################
+  pythonapp:
+    build: ./dapr/python
+    depends_on:
+      - redis
+      - placement
+    networks:
+      - common_network
+  pythonapp-dapr:
+    image: "daprio/daprd:edge"
+    command: ["./daprd",
+      "-app-id", "pythonapp",
+      "-placement-host-address", "placement:50006",
+      "-components-path", "/components"]
+    volumes:
+      - "./dapr/components/:/components"
+    depends_on:
+      - pythonapp
+    network_mode: "service:pythonapp"
+    ############################
+  # Dapr placement service
+  ############################
+  placement:
+    image: "daprio/dapr"
+    command: ["./placement", "-port", "50006"]
+    ports:
+      - "50006:50006"
+    networks:
+      - common_network
+  ############################
+  # Redis state store
+  ############################
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "6380:6379"
+    networks:
+      - common_network
+
 networks:
   common_network:
 
