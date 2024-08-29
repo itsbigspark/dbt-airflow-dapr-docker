@@ -106,6 +106,8 @@ services:
   # Python app + Dapr sidecar
   ############################
   pythonapp:
+    environment:
+      PYTHONUNBUFFERED: 1
     build: ./dapr/python
     depends_on:
       - redis
