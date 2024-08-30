@@ -86,6 +86,7 @@ services:
       - "50002:50002"
       - "9091:9090"  # Expose Prometheus metrics port
       - "3000:3000"  # Expose the app port
+      - "9093:9090"  # Expose Dapr sidecar metrics port
     depends_on:
       - redis
       - placement
@@ -101,7 +102,8 @@ services:
       "-placement-host-address", "placement:50006",
       "-dapr-grpc-port", "50002",
       "-components-path", "/components",
-      "-config", "/config/tracing.yaml"]  # Updated this line
+      "-config", "/config/tracing.yaml",
+      "-metrics-port", "9093"]  # Change this to 9093 to match the exposed port
     volumes:
       - "./dapr/components/:/components"
       - "./dapr/config/:/config"
@@ -124,14 +126,17 @@ services:
       - common_network
     ports:
       - "8501:8501"
-      - "9092:9090"  # Keep this as 9092:9090
+      - "9092:9092"  # Change this to 9092:9092 to expose the correct port
+      - "9094:9094"  # Expose Dapr sidecar metrics port
+
   pythonapp-dapr:
     image: "daprio/daprd:edge"
     command: ["./daprd",
       "-app-id", "pythonapp",
       "-placement-host-address", "placement:50006",
       "-components-path", "/components",
-      "-config", "/config/tracing.yaml"]  # Updated this line
+      "-config", "/config/tracing.yaml",
+      "-metrics-port", "9094"]  # Change this to 9094 to match the exposed port
     volumes:
       - "./dapr/components/:/components"
       - "./dapr/config/:/config"
@@ -209,6 +214,15 @@ services:
       - common_network
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
+      - grafana-storage:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    restart: always
 
 networks:
   common_network:
+
+volumes:
+  grafana-storage:
