@@ -22,7 +22,7 @@ const triggerAirflowDAG = async (dagId, conf) => {
 };
 
 const recordEvent = async (eventType, details) => {
-  console.log(`Recording ${eventType} event:`, JSON.stringify(details));
+  console.log(`Recording ${eventType} event for dataset ${details.dataset}:`, JSON.stringify(details));
   return { id: Math.floor(Math.random() * 1000), timestamp: new Date().toISOString(), ...details };
 };
 
@@ -41,6 +41,18 @@ const getLineage = async (dataset) => {
     ]
   };
 };
+
+const getEvents = async (dataset) => {
+  console.log(`Retrieving events for dataset: ${dataset}`);
+  // Mock data for demonstration purposes
+  const events = [
+    { id: 1, dataset: dataset, timestamp: new Date().toISOString(), details: "Event 1 details" },
+    { id: 2, dataset: dataset, timestamp: new Date().toISOString(), details: "Event 2 details" },
+    { id: 3, dataset: dataset, timestamp: new Date().toISOString(), details: "Event 3 details" }
+  ];
+  return events;
+};
+
 
 const getProcessConfig = async () => {
   console.log("Retrieving process configuration");
@@ -149,13 +161,24 @@ app.post('/recordEvent', async (req, res) => {
   try {
     const eventData = req.body;
     console.log('Received event:', eventData);
-    await recordEvent(eventData.status, eventData);
-    res.status(200).send({ message: 'Event recorded successfully' });
+    const recordedEvent = await recordEvent(eventData.status, eventData);
+    res.status(200).send({ message: 'Event recorded successfully', event: recordedEvent });
   } catch (error) {
     console.error('Error recording event:', error);
     res.status(500).send({ message: 'Failed to record event', error: error.message });
   }
 });
+// New endpoint for getting events
+app.get('/getEvents', async (req, res) => {
+  try {
+    const events = await getEvents();
+    res.status(200).send(events);
+  } catch (error) {
+    console.error('Error getting events:', error);
+    res.status(500).send({ message: 'Failed to get events', error: error.message });
+  }
+});
+
 
 // New endpoint for recording lineage
 app.post('/recordLineage', async (req, res) => {

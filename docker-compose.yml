@@ -114,6 +114,8 @@ services:
       - placement
     networks:
       - common_network
+    ports:
+      - "8501:8501"
   pythonapp-dapr:
     image: "daprio/daprd:edge"
     command: ["./daprd",
