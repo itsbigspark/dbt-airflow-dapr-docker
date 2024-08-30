@@ -125,7 +125,7 @@ services:
     depends_on:
       - pythonapp
     network_mode: "service:pythonapp"
-    ############################
+  ############################
   # Dapr placement service
   ############################
   placement:
@@ -144,7 +144,56 @@ services:
       - "6380:6379"
     networks:
       - common_network
+  ############################
+  # Prometheus
+  ############################
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - common_network
+
+  ############################
+  # Loki
+  ############################
+  # loki:
+  #   image: grafana/loki:2.2.1
+  #   ports:
+  #     - "3100:3100"
+  #   networks:
+  #     - common_network
+  #   command: -config.file=/etc/loki/local-config.yaml
+  #   volumes:
+  #     - ./loki/local-config.yaml:/etc/loki/local-config.yaml
+
+  ############################
+  # OpenTelemetry Collector
+  ############################
+  otel-collector:
+    image: otel/opentelemetry-collector:latest
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"
+      - "55680:55680"
+    networks:
+      - common_network
+
+  ############################
+  # Grafana
+  ############################
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - common_network
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
 
 networks:
   common_network:
-

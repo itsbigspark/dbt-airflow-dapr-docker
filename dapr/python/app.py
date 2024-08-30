@@ -53,7 +53,7 @@ def data_engineering_pipeline():
         return
 
     # Step 2: Get dataset configuration
-    dataset = "example_dataset"
+    dataset = "transactions_raw"
     dataset_config = call_endpoint('datasetConfig', data={'dataset': dataset})
     if dataset_config is None:
         print(f"Failed to get dataset configuration for {dataset}. Exiting pipeline.")
