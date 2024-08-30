@@ -16,4 +16,13 @@ scrape_configs:
     scrape_interval: 5s
 
     static_configs:
-      - targets: ['nodeapp:9090','pythonapp:9090']
+      - targets: ['nodeapp:9091', 'pythonapp:9092']  # Updated nodeapp port to 9091
+
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8890']  # Changed from 8889 to 8890
+
+  # Remove or comment out this duplicate job
+  # - job_name: 'otel-collector'
+  #   static_configs:
+  #     - targets: ['otel-collector:8888']

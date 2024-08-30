@@ -84,13 +84,46 @@ def simulate_data_processing(dataset_config):
 
     return processed_rows
 
+def generate_correlation_id():
+    return call_endpoint('generateCorrelationId')['correlationId']
+
+def record_event(event_type, details, dataset, process_start_time, correlation_id):
+    event_data = {
+        'status': event_type,
+        'pipeline': 'data_engineering_pipeline',
+        'timestamp': datetime.now().isoformat(),
+        'dataset': dataset,
+        'process_start_time': process_start_time,
+        'correlationId': correlation_id,
+        **details
+    }
+    recorded_event = call_endpoint('recordEvent', method='POST', data=event_data)
+    if recorded_event:
+        st.success(f"Event recorded: {event_type}")
+        with st.expander(f"{event_type.capitalize()} Event", expanded=False):
+            st.json(recorded_event)
+    else:
+        st.error(f"Failed to record event: {event_type}")
+    return recorded_event
+
+def get_events(dataset, correlation_id):
+    events = call_endpoint('getEvents', data={'dataset': dataset, 'correlationId': correlation_id})
+    if events is None:
+        st.error(f"Failed to retrieve events for dataset: {dataset}, correlationId: {correlation_id}")
+        return []
+    return events
+
 def data_engineering_pipeline():
+    # Generate a correlation ID at the start of processing
+    correlation_id = generate_correlation_id()
+    st.info(f"Correlation ID for this run: {correlation_id}")
+
     # Add a progress bar for pipeline execution
     progress_bar = st.progress(0)
     
     # Step 1: Get process configuration
     process_config = call_endpoint('config')
-    if process_config is None:
+    if (process_config is None):
         st.error("Failed to get process configuration. Exiting pipeline.")
         return
     progress_bar.progress(1 / 8)
@@ -98,7 +131,7 @@ def data_engineering_pipeline():
     # Step 2: Get dataset configuration
     dataset = "transactions_raw"
     dataset_config = call_endpoint('datasetConfig', data={'dataset': dataset})
-    if dataset_config is None:
+    if (dataset_config is None):
         st.error(f"Failed to get dataset configuration for {dataset}. Exiting pipeline.")
         return
     progress_bar.progress(2 / 8)
@@ -108,25 +141,54 @@ def data_engineering_pipeline():
         st.json(dataset_config)
 
     # Step 3: Record start event
-    start_event = {
-        'status': 'start',
-        'pipeline': 'data_engineering_pipeline',
-        'timestamp': datetime.now().isoformat(),
-        'dataset': dataset
-    }
-    start_event_response = call_endpoint('recordEvent', method='POST', data=start_event)
+    process_start_time = datetime.now().isoformat()
+    start_event = record_event('start', {'dataset': dataset}, dataset, process_start_time, correlation_id)
     with st.expander("Start Event", expanded=True):
-        st.json(start_event_response)
+        st.json(start_event)
     progress_bar.progress(3 / 8)
     time.sleep(1)  # Slow down processing
 
-    # Step 4: Simulate data processing
-    with st.expander("Data Processing", expanded=True):
-        processed_rows = simulate_data_processing(dataset_config)
+    # Step 4: Trigger Airflow DAG
+    dag_id = 'dag_'+dataset
+    dag_config = call_endpoint('dagConfig', data={'dagId': dag_id})
+    # with st.expander("DAG Configuration", expanded=True):
+    #     st.json(dag_config)
+
+    # Record DAG configuration event
+    dag_config_event = record_event('dag_config_retrieved', {
+        'dag_id': dag_id,
+        'dag_config': dag_config
+    }, dataset, process_start_time, correlation_id)
+    # with st.expander("DAG Config Event", expanded=True):
+    #     st.json(dag_config_event)
+
+    dag_conf = {
+        'dataset': dataset,
+        'processed_at': datetime.now().isoformat(),
+        'rows_processed': 0  # Placeholder, will be updated after processing
+    }
+    dag_trigger_response = call_endpoint('triggerDag', method='POST', data={'dagId': dag_id, 'conf': dag_conf})
+    # with st.expander("DAG Trigger", expanded=True):
+    #     st.json(dag_trigger_response)
     progress_bar.progress(4 / 8)
     time.sleep(1)  # Slow down processing
 
-    # Step 5: Record lineage
+    # Record DAG trigger event
+    dag_trigger_event = record_event('dag_triggered', {
+        'dag_id': dag_id,
+        'dag_conf': dag_conf,
+        'dag_trigger_response': dag_trigger_response
+    }, dataset, process_start_time, correlation_id)
+    # with st.expander("DAG Trigger Event", expanded=True):
+    #     st.json(dag_trigger_event)
+
+    # Step 5: Simulate data processing
+    with st.expander("Data Processing", expanded=True):
+        processed_rows = simulate_data_processing(dataset_config)
+    progress_bar.progress(5 / 8)
+    time.sleep(1)  # Slow down processing
+
+    # Step 6: Record lineage
     lineage_data = {
         'input': dataset_config['source'],
         'output': dataset_config['destination'],
@@ -136,78 +198,36 @@ def data_engineering_pipeline():
     lineage_response = call_endpoint('recordLineage', method='POST', data={'dataset': dataset, 'lineageData': lineage_data})
     with st.expander("Lineage Recording", expanded=True):
         st.json(lineage_response)
-    progress_bar.progress(5 / 8)
-    time.sleep(1)  # Slow down processing
-
-    # Record lineage event
-    lineage_event = {
-        'status': 'lineage_recorded',
-        'pipeline': 'data_engineering_pipeline',
-        'timestamp': datetime.now().isoformat(),
-        'dataset': dataset,
-        'lineage_data': lineage_data
-    }
-    call_endpoint('recordEvent', method='POST', data=lineage_event)
-
-    # Step 6: Trigger Airflow DAG
-    dag_id = 'example_dag'
-    dag_config = call_endpoint('dagConfig', data={'dagId': dag_id})
-    with st.expander("DAG Configuration", expanded=True):
-        st.json(dag_config)
-
-    # Record DAG configuration event
-    dag_config_event = {
-        'status': 'dag_config_retrieved',
-        'pipeline': 'data_engineering_pipeline',
-        'timestamp': datetime.now().isoformat(),
-        'dag_id': dag_id,
-        'dag_config': dag_config
-    }
-    call_endpoint('recordEvent', method='POST', data=dag_config_event)
-
-    dag_conf = {
-        'dataset': dataset,
-        'processed_at': datetime.now().isoformat(),
-        'rows_processed': processed_rows
-    }
-    dag_trigger_response = call_endpoint('triggerDag', method='POST', data={'dagId': dag_id, 'conf': dag_conf})
-    with st.expander("DAG Trigger", expanded=True):
-        st.json(dag_trigger_response)
     progress_bar.progress(6 / 8)
     time.sleep(1)  # Slow down processing
 
-    # Record DAG trigger event
-    dag_trigger_event = {
-        'status': 'dag_triggered',
-        'pipeline': 'data_engineering_pipeline',
-        'timestamp': datetime.now().isoformat(),
-        'dag_id': dag_id,
-        'dag_conf': dag_conf,
-        'dag_trigger_response': dag_trigger_response
-    }
-    call_endpoint('recordEvent', method='POST', data=dag_trigger_event)
+    # Record lineage event
+    lineage_event = record_event('lineage_recorded', {
+        'dataset': dataset,
+        'lineage_data': lineage_data
+    }, dataset, process_start_time, correlation_id)
+    # with st.expander("Lineage Event", expanded=True):
+    #     st.json(lineage_event)
 
     # Step 7: Get lineage information
     lineage_info = call_endpoint('getLineage', data={'dataset': dataset_config['destination']})
-    with st.expander("Lineage Information", expanded=True):
-        st.json(lineage_info)
+    # with st.expander("Lineage Information", expanded=True):
+    #     st.json(lineage_info)
     progress_bar.progress(7 / 8)
     time.sleep(1)  # Slow down processing
 
     # Step 8: Record end event
-    end_event = {
-        'status': 'end',
-        'pipeline': 'data_engineering_pipeline',
-        'timestamp': datetime.now().isoformat(),
+    end_event = record_event('end', {
         'result': 'success',
         'rows_processed': processed_rows,
         'dataset': dataset
-    }
-    end_event_response = call_endpoint('recordEvent', method='POST', data=end_event)
-    with st.expander("End Event", expanded=True):
-        st.json(end_event_response)
+    }, dataset, process_start_time, correlation_id)
+    # with st.expander("End Event", expanded=True):
+    #     st.json(end_event)
     progress_bar.progress(8 / 8)
     time.sleep(1)  # Slow down processing
+
+    return correlation_id
 
 # Streamlit app
 st.set_page_config(page_title="Data Engineering Pipeline", layout="wide")
@@ -233,58 +253,55 @@ with col1:
     st.header("Pipeline Execution")
     if st.button("🏁 Start Data Engineering Pipeline"):
         st.write("Starting Data Engineering Pipeline...")
-        data_engineering_pipeline()
-        st.success("Pipeline completed successfully!")
+        correlation_id = data_engineering_pipeline()
+        st.success(f"Pipeline completed successfully! Correlation ID: {correlation_id}")
+        st.info("Use this Correlation ID to retrieve event logs for this run.")
 
     st.subheader("📊 Audit Logs")
     dataset = st.text_input("Dataset", "transactions_raw")
     if st.button("Get Lineage Information"):
         lineage_info = call_endpoint('getLineage', data={'dataset': dataset})
         if lineage_info and isinstance(lineage_info, dict):
+            input_data = lineage_info.get('input', 'Unknown Input')
+            transformation = lineage_info.get('transformation', 'Unknown Transformation')
+            output_data = lineage_info.get('output', 'Unknown Output')
+            row_counts = lineage_info.get('row_counts', [1, 1])
+
             fig = go.Figure(data=[go.Sankey(
                 node = dict(
                   pad = 15,
                   thickness = 20,
                   line = dict(color = "black", width = 0.5),
-                  label = [
-                      lineage_info.get('input', 'Unknown Input'),
-                      lineage_info.get('transformation', 'Unknown Transformation'),
-                      lineage_info.get('output', 'Unknown Output')
-                  ],
+                  label = [input_data, transformation, output_data],
                   color = ["blue", "green", "red"]
                 ),
                 link = dict(
                   source = [0, 1],
                   target = [1, 2],
-                  value = [1, 1]
+                  value = row_counts
               ))])
             fig.update_layout(title_text="Data Lineage", font_size=10)
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.warning("No valid lineage information available.")
     
-    st.subheader("📝 Event emitd")
-    event_responses_expander = st.expander("Show/Hide Event emits", expanded=False)
-    with event_responses_expander:
-        dataset = "transactions_raw"  # You can make this dynamic if needed
-        start_event_response = call_endpoint('recordEvent', method='POST', data={
-            'status': 'start',
-            'pipeline': 'data_engineering_pipeline',
-            'timestamp': datetime.now().isoformat(),
-            'dataset': dataset
-        })
-        end_event_response = call_endpoint('recordEvent', method='POST', data={
-            'status': 'end',
-            'pipeline': 'data_engineering_pipeline',
-            'timestamp': datetime.now().isoformat(),
-            'result': 'success',
-            'rows_processed': random.randint(1000, 1000000),
-            'dataset': dataset
-        })
-        if start_event_response and end_event_response:
-            st.json({"Start Event Response": start_event_response, "End Event Response": end_event_response})
-        else:
-            st.warning("Failed to retrieve event responses.")
+    # Update the event logs section in the Streamlit app
+    st.subheader("📝 Dataset Event Logs")
+    event_logs_expander = st.expander("Show/Hide Event Logs", expanded=False)
+    with event_logs_expander:
+        dataset = st.text_input("Dataset for Event Logs", "transactions_raw")
+        correlation_id = st.text_input("Correlation ID", "")
+        if st.button("Get Event Logs"):
+            if dataset and correlation_id:
+                events = get_events(dataset, correlation_id)
+                if events:
+                    st.success(f"Retrieved {len(events)} events for dataset: {dataset}, correlationId: {correlation_id}")
+                    for event in events:
+                        st.json(event)
+                else:
+                    st.info(f"No events found for dataset: {dataset}, correlationId: {correlation_id}")
+            else:
+                st.warning("Please provide both Dataset and Correlation ID")
 
 with col2:
     st.header("⚙️ Configuration")
@@ -295,7 +312,7 @@ with col2:
         else:
             st.warning("Failed to retrieve process configuration.")
 
-    dag_id = st.text_input("DAG ID", "example_dag")
+    dag_id = st.text_input("DAG ID", 'dag_'+dataset)
     if st.button("Get DAG Config"):
         dag_config = call_endpoint('dagConfig', data={'dagId': dag_id})
         if dag_config:
