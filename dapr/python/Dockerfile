@@ -10,6 +10,6 @@ RUN pip install -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
-RUN ls -la /app
+ENV PYTHONUNBUFFERED=1
 CMD ["python", "-m", "streamlit", "run", "app.py"]
 # ENTRYPOINT ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
