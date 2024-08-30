@@ -84,23 +84,30 @@ services:
     build: ./dapr/node
     ports:
       - "50002:50002"
+      - "9091:9090"  # Expose Prometheus metrics port
+      - "3000:3000"  # Expose the app port
     depends_on:
       - redis
       - placement
     networks:
       - common_network
+
   nodeapp-dapr:
     image: "daprio/daprd:edge"
     command: ["./daprd",
       "-app-id", "nodeapp",
       "-app-port", "3000",
+      "-app-protocol", "http",
       "-placement-host-address", "placement:50006",
       "-dapr-grpc-port", "50002",
-      "-components-path", "/components"]
+      "-components-path", "/components",
+      "-config", "/config/tracing.yaml"]  # Updated this line
     volumes:
-        - "./dapr/components/:/components"
+      - "./dapr/components/:/components"
+      - "./dapr/config/:/config"
     depends_on:
       - nodeapp
+      - otel-collector
     network_mode: "service:nodeapp"
   ############################
   # Python app + Dapr sidecar
@@ -112,18 +119,25 @@ services:
     depends_on:
       - redis
       - placement
+      - otel-collector  # Add this line
     networks:
       - common_network
+    ports:
+      - "8501:8501"
+      - "9092:9090"  # Keep this as 9092:9090
   pythonapp-dapr:
     image: "daprio/daprd:edge"
     command: ["./daprd",
       "-app-id", "pythonapp",
       "-placement-host-address", "placement:50006",
-      "-components-path", "/components"]
+      "-components-path", "/components",
+      "-config", "/config/tracing.yaml"]  # Updated this line
     volumes:
       - "./dapr/components/:/components"
+      - "./dapr/config/:/config"
     depends_on:
       - pythonapp
+      - otel-collector
     network_mode: "service:pythonapp"
   ############################
   # Dapr placement service
@@ -180,6 +194,7 @@ services:
     ports:
       - "4317:4317"
       - "55680:55680"
+      - "8890:8890"  # Changed from 8889 to 8890
     networks:
       - common_network
 
@@ -189,7 +204,7 @@ services:
   grafana:
     image: grafana/grafana
     ports:
-      - "3000:3000"
+      - "3001:3000"
     networks:
       - common_network
     volumes:

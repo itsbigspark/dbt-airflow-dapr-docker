@@ -12,6 +12,13 @@
   "dependencies": {
     "body-parser": "^1.18.3",
     "express": "^4.16.4",
-    "isomorphic-fetch": "^2.2.1"
+    "isomorphic-fetch": "^2.2.1",
+    "@opentelemetry/api": "^1.0.0",
+    "@opentelemetry/sdk-trace-node": "^1.0.0",
+    "@opentelemetry/sdk-trace-base": "^1.0.0",
+    "@opentelemetry/exporter-zipkin": "^1.0.0",
+    "@opentelemetry/sdk-metrics": "^1.0.0",
+    "@opentelemetry/exporter-prometheus": "^0.40.0"
+
   }
 }
