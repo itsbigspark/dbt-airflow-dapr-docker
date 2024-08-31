@@ -80,37 +80,141 @@ services:
     networks:
       - common_network
 
-  nodeapp:
+  audit-service:
     build: ./dapr/node
+    command: node audit-service.js
     ports:
-      - "50002:50002"
-      - "9091:9090"  # Expose Prometheus metrics port
-      - "3000:3000"  # Expose the app port
-      - "9093:9090"  # Expose Dapr sidecar metrics port
+      - "3000:3000"
+      - "9091:9091"  # Add this line for app metrics
     depends_on:
       - redis
       - placement
     networks:
       - common_network
 
-  nodeapp-dapr:
+  audit-service-dapr:
     image: "daprio/daprd:edge"
     command: ["./daprd",
-      "-app-id", "nodeapp",
+      "-app-id", "audit-service",
       "-app-port", "3000",
-      "-app-protocol", "http",
-      "-placement-host-address", "placement:50006",
-      "-dapr-grpc-port", "50002",
       "-components-path", "/components",
       "-config", "/config/tracing.yaml",
-      "-metrics-port", "9093"]  # Change this to 9093 to match the exposed port
+      "-metrics-port", "9093"]  # Add this line for Dapr sidecar metrics
     volumes:
       - "./dapr/components/:/components"
       - "./dapr/config/:/config"
     depends_on:
-      - nodeapp
-      - otel-collector
-    network_mode: "service:nodeapp"
+      - audit-service
+    network_mode: "service:audit-service"
+
+  airflow-trigger-service:
+    build: ./dapr/node
+    command: node airflow-trigger-service.js
+    ports:
+      - "3001:3001"
+      - "9095:9095"  # Add this line for app metrics
+    depends_on:
+      - redis
+      - placement
+    networks:
+      - common_network
+
+  airflow-trigger-service-dapr:
+    image: "daprio/daprd:edge"
+    command: ["./daprd",
+      "-app-id", "airflow-trigger-service",
+      "-app-port", "3001",
+      "-components-path", "/components",
+      "-config", "/config/tracing.yaml",
+      "-metrics-port", "9097"]  # Add this line for Dapr sidecar metrics
+    volumes:
+      - "./dapr/components/:/components"
+      - "./dapr/config/:/config"
+    depends_on:
+      - airflow-trigger-service
+    network_mode: "service:airflow-trigger-service"
+
+  airflow-config-service:
+    build: ./dapr/node
+    command: node airflow-config-service.js
+    ports:
+      - "3002:3002"
+      - "9099:9099"  # Add this line for app metrics
+    depends_on:
+      - redis
+      - placement
+    networks:
+      - common_network
+
+  airflow-config-service-dapr:
+    image: "daprio/daprd:edge"
+    command: ["./daprd",
+      "-app-id", "airflow-config-service",
+      "-app-port", "3002",
+      "-components-path", "/components",
+      "-config", "/config/tracing.yaml",
+      "-metrics-port", "9101"]  # Add this line for Dapr sidecar metrics
+    volumes:
+      - "./dapr/components/:/components"
+      - "./dapr/config/:/config"
+    depends_on:
+      - airflow-config-service
+    network_mode: "service:airflow-config-service"
+  
+  management-service:
+    build: ./dapr/node
+    command: node management-service.js
+    ports:
+      - "3003:3003"
+      - "9103:9103"  # Add this line for app metrics
+    depends_on:
+      - redis
+      - placement
+    networks:
+      - common_network
+
+  management-service-dapr:
+    image: "daprio/daprd:edge"
+    command: ["./daprd",
+      "-app-id", "management-service",
+      "-app-port", "3003",
+      "-components-path", "/components",
+      "-config", "/config/tracing.yaml",
+      "-metrics-port", "9105"]  # Add this line for Dapr sidecar metrics
+    volumes:
+      - "./dapr/components/:/components"
+      - "./dapr/config/:/config"
+    depends_on:
+      - management-service
+    network_mode: "service:management-service"
+
+  lineage-service:
+    build: ./dapr/node
+    command: node lineage-service.js
+    ports:
+      - "3004:3004"  # Change this line
+      - "9107:9107"
+    depends_on:
+      - redis
+      - placement
+    networks:
+      - common_network
+
+  lineage-service-dapr:
+    image: "daprio/daprd:edge"
+    command: ["./daprd",
+      "-app-id", "lineage-service",
+      "-app-port", "3004",
+      "-components-path", "/components",
+      "-config", "/config/tracing.yaml",
+      "-metrics-port", "9109"]  # Add this line for Dapr sidecar metrics
+    volumes:
+      - "./dapr/components/:/components"
+      - "./dapr/config/:/config"
+    depends_on:
+      - lineage-service
+    network_mode: "service:lineage-service"
+
   ############################
   # Python app + Dapr sidecar
   ############################
@@ -209,7 +313,7 @@ services:
   grafana:
     image: grafana/grafana
     ports:
-      - "3001:3000"
+      - "4000:3000"
     networks:
       - common_network
     volumes:

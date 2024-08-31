@@ -1,7 +1,8 @@
 FROM node:14-alpine 
 WORKDIR /app
-COPY . .
+COPY package*.json ./
 RUN npm install
-EXPOSE 3000
-CMD [ "node", "app.js" ]
+COPY . .
+EXPOSE 3000 3001 3002
+CMD ["sh", "-c", "node audit-service.js & node airflow-trigger-service.js & node airflow-config-service.js"]
 

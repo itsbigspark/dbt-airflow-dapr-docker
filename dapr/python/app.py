@@ -8,38 +8,134 @@ import pandas as pd
 import plotly.graph_objects as go
 import requests
 import streamlit as st
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import \
+    OTLPSpanExporter
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.semconv.resource import ResourceAttributes
+from prometheus_client import CollectorRegistry, Counter, start_http_server
 
 # Dapr configuration
 dapr_port = 3500
-base_url = f"http://localhost:{dapr_port}/v1.0/invoke/nodeapp/method"
+base_url = f"http://localhost:{dapr_port}/v1.0/invoke"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def call_endpoint(endpoint, method='GET', data=None):
-    url = f"{base_url}/{endpoint}"
-    try:
-        logger.info(f"Calling endpoint: {url}")
-        if method == 'GET':
-            response = requests.get(url, params=data, timeout=5)
-        elif method == 'POST':
-            response = requests.post(url, json=data, timeout=5)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error calling {endpoint}: {e}")
-        logger.error(f"URL: {url}")
-        logger.error(f"Method: {method}")
-        logger.error(f"Data: {data}")
-        if hasattr(e, 'response') and e.response is not None:
-            logger.error(f"Response status code: {e.response.status_code}")
-            logger.error(f"Response headers: {e.response.headers}")
-            logger.error(f"Response text: {e.response.text}")
-        st.error(f"Error calling {endpoint}: {e}")
-        st.error(f"URL: {url}")
-        st.error(f"Method: {method}")
-        st.error(f"Data: {data}")
-        return None
+# Set up OpenTelemetry tracing with retry logic
+def setup_opentelemetry():
+    resource = Resource(attributes={
+        ResourceAttributes.SERVICE_NAME: "pythonapp"
+    })
+
+    trace.set_tracer_provider(TracerProvider(resource=resource))
+    tracer = trace.get_tracer(__name__)
+
+    max_retries = 5
+    retry_delay = 5  # seconds
+
+    for attempt in range(max_retries):
+        try:
+            otlp_exporter = OTLPSpanExporter(
+                endpoint="http://otel-collector:4317",
+                insecure=True
+            )
+            span_processor = BatchSpanProcessor(otlp_exporter)
+            trace.get_tracer_provider().add_span_processor(span_processor)
+            logger.info("Successfully connected to OpenTelemetry Collector")
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logger.warning(f"Failed to connect to OpenTelemetry Collector. Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+            else:
+                logger.error("Failed to connect to OpenTelemetry Collector after multiple attempts")
+
+    return tracer
+
+tracer = setup_opentelemetry()
+
+# Instrument the requests library
+RequestsInstrumentor().instrument()
+
+# Set up Prometheus metrics
+registry = CollectorRegistry()
+REQUEST_COUNT = Counter('request_count', 'Total number of requests', registry=registry)
+
+# Start the Prometheus HTTP server
+try:
+    start_http_server(port=9092, addr='0.0.0.0', registry=registry)
+    logger.info("Started Prometheus HTTP server on port 9092")
+except OSError as e:
+    if e.errno == 98:  # Address already in use
+        logger.info("Prometheus HTTP server already running on port 9092")
+    else:
+        logger.error(f"Failed to start Prometheus HTTP server: {e}")
+
+# Use the metrics in your Streamlit app
+def increment_request_counter():
+    REQUEST_COUNT.inc()
+
+# Call this function at the beginning of your Streamlit app
+increment_request_counter()
+
+def call_endpoint(service_name, method_name, http_method='GET', data=None):
+    with tracer.start_as_current_span(f"call_endpoint_{service_name}_{method_name}"):
+        url = f"{base_url}/{service_name}/method/{method_name}"
+        try:
+            logger.info(f"Calling endpoint: {url}")
+            if http_method == 'GET':
+                response = requests.get(url, params=data, timeout=5)
+            elif http_method == 'POST':
+                response = requests.post(url, json=data, timeout=5)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error calling {service_name}/{method_name}: {e}")
+            logger.error(f"URL: {url}")
+            logger.error(f"Method: {http_method}")
+            logger.error(f"Data: {data}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response status code: {e.response.status_code}")
+                logger.error(f"Response headers: {e.response.headers}")
+                logger.error(f"Response text: {e.response.text}")
+            st.error(f"Error calling {service_name}/{method_name}: {e}")
+            st.error(f"URL: {url}")
+            st.error(f"Method: {http_method}")
+            st.error(f"Data: {data}")
+            return None
+
+def generate_correlation_id():
+    return call_endpoint('management-service', 'generateCorrelationId')['correlationId']
+
+def record_event(event_type, details, dataset, process_start_time, correlation_id):
+    event_data = {
+        'status': event_type,
+        'pipeline': 'data_engineering_pipeline',
+        'timestamp': datetime.now().isoformat(),
+        'dataset': dataset,
+        'process_start_time': process_start_time,
+        'correlationId': correlation_id,
+        **details
+    }
+    recorded_event = call_endpoint('audit-service', 'recordEvent', http_method='POST', data=event_data)
+    if recorded_event:
+        st.success(f"Event recorded: {event_type}")
+        with st.expander(f"{event_type.capitalize()} Event", expanded=False):
+            st.json(recorded_event)
+    else:
+        st.error(f"Failed to record event: {event_type}")
+    return recorded_event
+
+def get_events(dataset, correlation_id):
+    events = call_endpoint('audit-service', 'getEvents', data={'dataset': dataset, 'correlationId': correlation_id})
+    if events is None:
+        st.error(f"Failed to retrieve events for dataset: {dataset}, correlationId: {correlation_id}")
+        return []
+    return events
 
 def simulate_data_processing(dataset_config):
     if dataset_config is None:
@@ -84,150 +180,122 @@ def simulate_data_processing(dataset_config):
 
     return processed_rows
 
-def generate_correlation_id():
-    return call_endpoint('generateCorrelationId')['correlationId']
-
-def record_event(event_type, details, dataset, process_start_time, correlation_id):
-    event_data = {
-        'status': event_type,
-        'pipeline': 'data_engineering_pipeline',
-        'timestamp': datetime.now().isoformat(),
-        'dataset': dataset,
-        'process_start_time': process_start_time,
-        'correlationId': correlation_id,
-        **details
-    }
-    recorded_event = call_endpoint('recordEvent', method='POST', data=event_data)
-    if recorded_event:
-        st.success(f"Event recorded: {event_type}")
-        with st.expander(f"{event_type.capitalize()} Event", expanded=False):
-            st.json(recorded_event)
-    else:
-        st.error(f"Failed to record event: {event_type}")
-    return recorded_event
-
-def get_events(dataset, correlation_id):
-    events = call_endpoint('getEvents', data={'dataset': dataset, 'correlationId': correlation_id})
-    if events is None:
-        st.error(f"Failed to retrieve events for dataset: {dataset}, correlationId: {correlation_id}")
-        return []
-    return events
-
 def data_engineering_pipeline():
-    # Generate a correlation ID at the start of processing
-    correlation_id = generate_correlation_id()
-    st.info(f"Correlation ID for this run: {correlation_id}")
+    with tracer.start_as_current_span("data_engineering_pipeline"):
+        # Generate a correlation ID at the start of processing
+        correlation_id = generate_correlation_id()
+        st.info(f"Correlation ID for this run: {correlation_id}")
 
-    # Add a progress bar for pipeline execution
-    progress_bar = st.progress(0)
-    
-    # Step 1: Get process configuration
-    process_config = call_endpoint('config')
-    if (process_config is None):
-        st.error("Failed to get process configuration. Exiting pipeline.")
-        return
-    progress_bar.progress(1 / 8)
+        # Add a progress bar for pipeline execution
+        progress_bar = st.progress(0)
+        
+        # Step 1: Get process configuration
+        process_config = call_endpoint('airflow-config-service', 'config')
+        if (process_config is None):
+            st.error("Failed to get process configuration. Exiting pipeline.")
+            return
+        progress_bar.progress(1 / 8)
 
-    # Step 2: Get dataset configuration
-    dataset = "transactions_raw"
-    dataset_config = call_endpoint('datasetConfig', data={'dataset': dataset})
-    if (dataset_config is None):
-        st.error(f"Failed to get dataset configuration for {dataset}. Exiting pipeline.")
-        return
-    progress_bar.progress(2 / 8)
-    time.sleep(1)  # Slow down processing
+        # Step 2: Get dataset configuration
+        dataset = "transactions_raw"
+        dataset_config = call_endpoint('airflow-config-service', 'datasetConfig', data={'dataset': dataset})
+        if (dataset_config is None):
+            st.error(f"Failed to get dataset configuration for {dataset}. Exiting pipeline.")
+            return
+        progress_bar.progress(2 / 8)
+        time.sleep(1)  # Slow down processing
 
-    with st.expander("Dataset Configuration", expanded=True):
-        st.json(dataset_config)
+        with st.expander("Dataset Configuration", expanded=True):
+            st.json(dataset_config)
 
-    # Step 3: Record start event
-    process_start_time = datetime.now().isoformat()
-    start_event = record_event('start', {'dataset': dataset}, dataset, process_start_time, correlation_id)
-    with st.expander("Start Event", expanded=True):
-        st.json(start_event)
-    progress_bar.progress(3 / 8)
-    time.sleep(1)  # Slow down processing
+        # Step 3: Record start event
+        process_start_time = datetime.now().isoformat()
+        start_event = record_event('start', {'dataset': dataset}, dataset, process_start_time, correlation_id)
+        with st.expander("Start Event", expanded=True):
+            st.json(start_event)
+        progress_bar.progress(3 / 8)
+        time.sleep(1)  # Slow down processing
 
-    # Step 4: Trigger Airflow DAG
-    dag_id = 'dag_'+dataset
-    dag_config = call_endpoint('dagConfig', data={'dagId': dag_id})
-    # with st.expander("DAG Configuration", expanded=True):
-    #     st.json(dag_config)
+        # Step 4: Trigger Airflow DAG
+        dag_id = 'dag_'+dataset
+        dag_config = call_endpoint('airflow-config-service', 'dagConfig', data={'dagId': dag_id})
+        # with st.expander("DAG Configuration", expanded=True):
+        #     st.json(dag_config)
 
-    # Record DAG configuration event
-    dag_config_event = record_event('dag_config_retrieved', {
-        'dag_id': dag_id,
-        'dag_config': dag_config
-    }, dataset, process_start_time, correlation_id)
-    # with st.expander("DAG Config Event", expanded=True):
-    #     st.json(dag_config_event)
+        # Record DAG configuration event
+        dag_config_event = record_event('dag_config_retrieved', {
+            'dag_id': dag_id,
+            'dag_config': dag_config
+        }, dataset, process_start_time, correlation_id)
+        # with st.expander("DAG Config Event", expanded=True):
+        #     st.json(dag_config_event)
 
-    dag_conf = {
-        'dataset': dataset,
-        'processed_at': datetime.now().isoformat(),
-        'rows_processed': 0  # Placeholder, will be updated after processing
-    }
-    dag_trigger_response = call_endpoint('triggerDag', method='POST', data={'dagId': dag_id, 'conf': dag_conf})
-    # with st.expander("DAG Trigger", expanded=True):
-    #     st.json(dag_trigger_response)
-    progress_bar.progress(4 / 8)
-    time.sleep(1)  # Slow down processing
+        dag_conf = {
+            'dataset': dataset,
+            'processed_at': datetime.now().isoformat(),
+            'rows_processed': 0  # Placeholder, will be updated after processing
+        }
+        dag_trigger_response = call_endpoint('airflow-trigger-service', 'triggerDag', http_method='POST', data={'dagId': dag_id, 'conf': dag_conf})
+        # with st.expander("DAG Trigger", expanded=True):
+        #     st.json(dag_trigger_response)
+        progress_bar.progress(4 / 8)
+        time.sleep(1)  # Slow down processing
 
-    # Record DAG trigger event
-    dag_trigger_event = record_event('dag_triggered', {
-        'dag_id': dag_id,
-        'dag_conf': dag_conf,
-        'dag_trigger_response': dag_trigger_response
-    }, dataset, process_start_time, correlation_id)
-    # with st.expander("DAG Trigger Event", expanded=True):
-    #     st.json(dag_trigger_event)
+        # Record DAG trigger event
+        dag_trigger_event = record_event('dag_triggered', {
+            'dag_id': dag_id,
+            'dag_conf': dag_conf,
+            'dag_trigger_response': dag_trigger_response
+        }, dataset, process_start_time, correlation_id)
+        # with st.expander("DAG Trigger Event", expanded=True):
+        #     st.json(dag_trigger_event)
 
-    # Step 5: Simulate data processing
-    with st.expander("Data Processing", expanded=True):
-        processed_rows = simulate_data_processing(dataset_config)
-    progress_bar.progress(5 / 8)
-    time.sleep(1)  # Slow down processing
+        # Step 5: Simulate data processing
+        with st.expander("Data Processing", expanded=True):
+            processed_rows = simulate_data_processing(dataset_config)
+        progress_bar.progress(5 / 8)
+        time.sleep(1)  # Slow down processing
 
-    # Step 6: Record lineage
-    lineage_data = {
-        'input': dataset_config['source'],
-        'output': dataset_config['destination'],
-        'transformation': 'data_engineering_pipeline',
-        'rows_processed': processed_rows
-    }
-    lineage_response = call_endpoint('recordLineage', method='POST', data={'dataset': dataset, 'lineageData': lineage_data})
-    with st.expander("Lineage Recording", expanded=True):
-        st.json(lineage_response)
-    progress_bar.progress(6 / 8)
-    time.sleep(1)  # Slow down processing
+        # Step 6: Record lineage
+        lineage_data = {
+            'input': dataset_config['source'],
+            'output': dataset_config['destination'],
+            'transformation': 'data_engineering_pipeline',
+            'rows_processed': processed_rows
+        }
+        lineage_response = call_endpoint('lineage-service', 'recordLineage', http_method='POST', data={'dataset': dataset, 'lineageData': lineage_data})
+        with st.expander("Lineage Recording", expanded=True):
+            st.json(lineage_response)
+        progress_bar.progress(6 / 8)
+        time.sleep(1)  # Slow down processing
 
-    # Record lineage event
-    lineage_event = record_event('lineage_recorded', {
-        'dataset': dataset,
-        'lineage_data': lineage_data
-    }, dataset, process_start_time, correlation_id)
-    # with st.expander("Lineage Event", expanded=True):
-    #     st.json(lineage_event)
+        # Record lineage event
+        lineage_event = record_event('lineage_recorded', {
+            'dataset': dataset,
+            'lineage_data': lineage_data
+        }, dataset, process_start_time, correlation_id)
+        # with st.expander("Lineage Event", expanded=True):
+        #     st.json(lineage_event)
 
-    # Step 7: Get lineage information
-    lineage_info = call_endpoint('getLineage', data={'dataset': dataset_config['destination']})
-    # with st.expander("Lineage Information", expanded=True):
-    #     st.json(lineage_info)
-    progress_bar.progress(7 / 8)
-    time.sleep(1)  # Slow down processing
+        # Step 7: Get lineage information
+        lineage_info = call_endpoint('lineage-service', 'getLineage', data={'dataset': dataset_config['destination']})
+        # with st.expander("Lineage Information", expanded=True):
+        #     st.json(lineage_info)
+        progress_bar.progress(7 / 8)
+        time.sleep(1)  # Slow down processing
 
-    # Step 8: Record end event
-    end_event = record_event('end', {
-        'result': 'success',
-        'rows_processed': processed_rows,
-        'dataset': dataset
-    }, dataset, process_start_time, correlation_id)
-    # with st.expander("End Event", expanded=True):
-    #     st.json(end_event)
-    progress_bar.progress(8 / 8)
-    time.sleep(1)  # Slow down processing
+        # Step 8: Record end event
+        end_event = record_event('end', {
+            'result': 'success',
+            'rows_processed': processed_rows,
+            'dataset': dataset
+        }, dataset, process_start_time, correlation_id)
+        # with st.expander("End Event", expanded=True):
+        #     st.json(end_event)
+        progress_bar.progress(8 / 8)
+        time.sleep(1)  # Slow down processing
 
-    return correlation_id
+        return correlation_id
 
 # Streamlit app
 st.set_page_config(page_title="Data Engineering Pipeline", layout="wide")
@@ -260,7 +328,7 @@ with col1:
     st.subheader("📊 Audit Logs")
     dataset = st.text_input("Dataset", "transactions_raw")
     if st.button("Get Lineage Information"):
-        lineage_info = call_endpoint('getLineage', data={'dataset': dataset})
+        lineage_info = call_endpoint('lineage-service', 'getLineage', data={'dataset': dataset})
         if lineage_info and isinstance(lineage_info, dict):
             input_data = lineage_info.get('input', 'Unknown Input')
             transformation = lineage_info.get('transformation', 'Unknown Transformation')
@@ -306,7 +374,7 @@ with col1:
 with col2:
     st.header("⚙️ Configuration")
     if st.button("Get Process Config"):
-        process_config = call_endpoint('config')
+        process_config = call_endpoint('airflow-config-service', 'config')
         if process_config:
             st.json(process_config)
         else:
@@ -314,7 +382,7 @@ with col2:
 
     dag_id = st.text_input("DAG ID", 'dag_'+dataset)
     if st.button("Get DAG Config"):
-        dag_config = call_endpoint('dagConfig', data={'dagId': dag_id})
+        dag_config = call_endpoint('airflow-config-service', 'dagConfig', data={'dagId': dag_id})
         if dag_config:
             st.json(dag_config)
         else:
@@ -322,7 +390,7 @@ with col2:
 
     dataset = st.text_input("Dataset for Config", "transactions_raw")
     if st.button("Get Dataset Config"):
-        dataset_config = call_endpoint('datasetConfig', data={'dataset': dataset})
+        dataset_config = call_endpoint('airflow-config-service', 'datasetConfig', data={'dataset': dataset})
         if dataset_config:
             st.json(dataset_config)
         else:
