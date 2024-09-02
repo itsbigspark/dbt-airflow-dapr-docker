@@ -1,5 +1,6 @@
 global:
   scrape_interval:     15s # By default, scrape targets every 15 seconds.
+  evaluation_interval: 15s
 
   # Attach these labels to any time series or alerts when communicating with
   # external systems (federation, remote storage, Alertmanager).
@@ -11,16 +12,12 @@ global:
 scrape_configs:
   # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
   - job_name: 'prometheus'
-
-    # Override the global default and scrape targets from this job every 5 seconds.
-    scrape_interval: 5s
-
     static_configs:
-      - targets: ['nodeapp:9091', 'pythonapp:9092']  # Updated nodeapp port to 9091
+      - targets: ['localhost:9090']
 
   - job_name: 'otel-collector'
     static_configs:
-      - targets: ['otel-collector:8890']  # Changed from 8889 to 8890
+      - targets: ['otel-collector:8888']
 
   # Remove or comment out this duplicate job
   # - job_name: 'otel-collector'
@@ -30,9 +27,9 @@ scrape_configs:
   - job_name: 'dapr'
     scrape_interval: 5s
     static_configs:
-      - targets: ['nodeapp:9093', 'pythonapp:9094']  # Updated to use the correct hostnames and ports
+      - targets: ['audit-service:9093', 'airflow-trigger-service:9097', 'airflow-config-service:9101', 'management-service:9105', 'pythonapp:9094', 'lineage-service:9109']  # Updated to use the correct hostnames and ports
 
   - job_name: 'apps'
     scrape_interval: 5s
     static_configs:
-      - targets: ['nodeapp:9091', 'pythonapp:9092']  # Separate job for app metrics
+      - targets: ['audit-service:9091', 'airflow-trigger-service:9095', 'airflow-config-service:9099', 'management-service:9103', 'pythonapp:9092', 'lineage-service:9107']  # Separate job for app metrics

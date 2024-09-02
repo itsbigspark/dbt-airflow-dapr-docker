@@ -80,54 +80,184 @@ services:
     networks:
       - common_network
 
-  nodeapp:
+  audit-service:
     build: ./dapr/node
+    command: node audit-service.js
     ports:
-      - "50002:50002"
-      - "9091:9090"  # Expose Prometheus metrics port
-      - "3000:3000"  # Expose the app port
-      - "9093:9090"  # Expose Dapr sidecar metrics port
+      - "3000:3000"
+      - "9091:9091"  # Add this line for app metrics
     depends_on:
       - redis
       - placement
     networks:
       - common_network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
-  nodeapp-dapr:
+  audit-service-dapr:
     image: "daprio/daprd:edge"
     command: ["./daprd",
-      "-app-id", "nodeapp",
+      "-app-id", "audit-service",
       "-app-port", "3000",
-      "-app-protocol", "http",
-      "-placement-host-address", "placement:50006",
-      "-dapr-grpc-port", "50002",
       "-components-path", "/components",
       "-config", "/config/tracing.yaml",
-      "-metrics-port", "9093"]  # Change this to 9093 to match the exposed port
+      "-metrics-port", "9093"]  # Add this line for Dapr sidecar metrics
     volumes:
       - "./dapr/components/:/components"
       - "./dapr/config/:/config"
     depends_on:
-      - nodeapp
-      - otel-collector
-    network_mode: "service:nodeapp"
+      - audit-service
+    network_mode: "service:audit-service"
+
+  airflow-trigger-service:
+    build: ./dapr/node
+    command: node airflow-trigger-service.js
+    ports:
+      - "3001:3001"
+      - "9095:9095"  # Add this line for app metrics
+    depends_on:
+      - redis
+      - placement
+    networks:
+      - common_network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  airflow-trigger-service-dapr:
+    image: "daprio/daprd:edge"
+    command: ["./daprd",
+      "-app-id", "airflow-trigger-service",
+      "-app-port", "3001",
+      "-components-path", "/components",
+      "-config", "/config/tracing.yaml",
+      "-metrics-port", "9097"]  # Add this line for Dapr sidecar metrics
+    volumes:
+      - "./dapr/components/:/components"
+      - "./dapr/config/:/config"
+    depends_on:
+      - airflow-trigger-service
+    network_mode: "service:airflow-trigger-service"
+
+  airflow-config-service:
+    build: ./dapr/node
+    command: node airflow-config-service.js
+    ports:
+      - "3002:3002"
+      - "9099:9099"  # Add this line for app metrics
+    depends_on:
+      - redis
+      - placement
+    networks:
+      - common_network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3002/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  airflow-config-service-dapr:
+    image: "daprio/daprd:edge"
+    command: ["./daprd",
+      "-app-id", "airflow-config-service",
+      "-app-port", "3002",
+      "-components-path", "/components",
+      "-config", "/config/tracing.yaml",
+      "-metrics-port", "9101"]  # Add this line for Dapr sidecar metrics
+    volumes:
+      - "./dapr/components/:/components"
+      - "./dapr/config/:/config"
+    depends_on:
+      - airflow-config-service
+    network_mode: "service:airflow-config-service"
+  
+  management-service:
+    build: ./dapr/node
+    command: node management-service.js
+    ports:
+      - "3003:3003"
+      - "9103:9103"  # Add this line for app metrics
+    depends_on:
+      - redis
+      - placement
+    networks:
+      - common_network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3003/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  management-service-dapr:
+    image: "daprio/daprd:edge"
+    command: ["./daprd",
+      "-app-id", "management-service",
+      "-app-port", "3003",
+      "-components-path", "/components",
+      "-config", "/config/tracing.yaml",
+      "-metrics-port", "9105"]  # Add this line for Dapr sidecar metrics
+    volumes:
+      - "./dapr/components/:/components"
+      - "./dapr/config/:/config"
+    depends_on:
+      - management-service
+    network_mode: "service:management-service"
+
+  lineage-service:
+    build: ./dapr/node
+    command: node lineage-service.js
+    ports:
+      - "3004:3004"  # Change this line
+      - "9107:9107"
+    depends_on:
+      - redis
+      - placement
+    networks:
+      - common_network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3004/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  lineage-service-dapr:
+    image: "daprio/daprd:edge"
+    command: ["./daprd",
+      "-app-id", "lineage-service",
+      "-app-port", "3004",
+      "-components-path", "/components",
+      "-config", "/config/tracing.yaml",
+      "-metrics-port", "9109"]  # Add this line for Dapr sidecar metrics
+    volumes:
+      - "./dapr/components/:/components"
+      - "./dapr/config/:/config"
+    depends_on:
+      - lineage-service
+    network_mode: "service:lineage-service"
+
   ############################
   # Python app + Dapr sidecar
   ############################
   pythonapp:
     environment:
       PYTHONUNBUFFERED: 1
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://127.0.0.1:4317"
+      OTEL_RESOURCE_ATTRIBUTES: "service.name=pythonapp"
     build: ./dapr/python
-    depends_on:
-      - redis
-      - placement
-      - otel-collector  # Add this line
+    # depends_on:
+      # otel-collector:
+        # condition: service_healthy 
     networks:
       - common_network
     ports:
       - "8501:8501"
-      - "9092:9092"  # Change this to 9092:9092 to expose the correct port
-      - "9094:9094"  # Expose Dapr sidecar metrics port
+      - "9092:9092"
+      - "9094:9094"
 
   pythonapp-dapr:
     image: "daprio/daprd:edge"
@@ -136,7 +266,7 @@ services:
       "-placement-host-address", "placement:50006",
       "-components-path", "/components",
       "-config", "/config/tracing.yaml",
-      "-metrics-port", "9094"]  # Change this to 9094 to match the exposed port
+      "-metrics-port", "9094"]
     volumes:
       - "./dapr/components/:/components"
       - "./dapr/config/:/config"
@@ -197,11 +327,18 @@ services:
     volumes:
       - ./otel/otel-collector-config.yaml:/etc/otel-collector-config.yaml
     ports:
-      - "4317:4317"
-      - "55680:55680"
-      - "8890:8890"  # Changed from 8889 to 8890
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8888:8888"   # Prometheus metrics exposed by the collector
+      - "8889:8889"   # Prometheus exporter metrics
+      - "13133:13133" # Health check extension
     networks:
       - common_network
+    healthcheck:  # Add this healthcheck block
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:13133/"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   ############################
   # Grafana
@@ -209,7 +346,7 @@ services:
   grafana:
     image: grafana/grafana
     ports:
-      - "3001:3000"
+      - "4000:3000"
     networks:
       - common_network
     volumes:

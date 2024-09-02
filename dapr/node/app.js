@@ -6,6 +6,7 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 require('isomorphic-fetch');
+const promClient = require('prom-client');
 
 const { MeterProvider } = require('@opentelemetry/sdk-metrics');
 const { PrometheusExporter } = require('@opentelemetry/exporter-prometheus');
@@ -76,12 +77,6 @@ const recordEvent = async (eventType, details) => {
   }
 };
 
-const recordLineage = async (dataset, data) => {
-  console.log(`Recording lineage for dataset ${dataset}:`, JSON.stringify(data));
-  return { id: Math.floor(Math.random() * 1000), timestamp: new Date().toISOString(), ...data };
-};
-
-// Modify the getEvents function
 const getEvents = async (dataset, correlationId) => {
   console.log(`Retrieving events for dataset: ${dataset}, correlationId: ${correlationId}`);
   try {
@@ -107,17 +102,6 @@ const getEvents = async (dataset, correlationId) => {
     console.error(`Error retrieving events for dataset ${dataset}, correlationId ${correlationId}:`, error);
     return [];
   }
-};
-
-const getLineage = async (dataset) => {
-  console.log(`Retrieving lineage for dataset: ${dataset}`);
-  return {
-    dataset: dataset,
-    lineage: [
-      { input: "raw_data", output: dataset, transformation: "extract_transform_load" },
-      { input: dataset, output: "analytics_table", transformation: "aggregate" }
-    ]
-  };
 };
 
 const getProcessConfig = async () => {
@@ -205,31 +189,6 @@ app.get('/generateCorrelationId', (req, res) => {
   res.status(200).send({ correlationId });
 });
 
-// New endpoint for recording lineage
-app.post('/recordLineage', async (req, res) => {
-  try {
-    const { dataset, lineageData } = req.body;
-    console.log('Received lineage data for dataset:', dataset, lineageData);
-    await recordLineage(dataset, lineageData);
-    res.status(200).send({ message: 'Lineage recorded successfully' });
-  } catch (error) {
-    console.error('Error recording lineage:', error);
-    res.status(500).send({ message: 'Failed to record lineage', error: error.message });
-  }
-});
-
-// New endpoint for getting lineage
-app.get('/getLineage', async (req, res) => {
-  try {
-    const { dataset } = req.query;
-    const lineageData = await getLineage(dataset);
-    res.status(200).send(lineageData);
-  } catch (error) {
-    console.error('Error getting lineage:', error);
-    res.status(500).send({ message: 'Failed to get lineage', error: error.message });
-  }
-});
-
 // New endpoint for triggering DAG
 app.post('/triggerDag', async (req, res) => {
   try {
@@ -285,10 +244,49 @@ const requestCounter = meter.createCounter('requests_total', {
   description: 'Total number of requests',
 });
 
-// Use the metrics in your routes
+// Create a Registry to register the metrics
+const register = new promClient.Registry();
+
+// Create a counter metric
+const httpRequestsTotal = new promClient.Counter({
+  name: 'http_requests_total',
+  help: 'Total number of HTTP requests',
+  labelNames: ['method', 'route', 'status_code'],
+});
+
+// Create a histogram metric for response times
+const httpRequestDurationMicroseconds = new promClient.Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'Duration of HTTP requests in seconds',
+  labelNames: ['method', 'route', 'status_code'],
+});
+
+// Register the metrics
+register.registerMetric(httpRequestsTotal);
+register.registerMetric(httpRequestDurationMicroseconds);
+
+// Middleware to collect metrics
 app.use((req, res, next) => {
-  requestCounter.add(1, { method: req.method, path: req.path });
+  const start = process.hrtime();
+  
+  res.on('finish', () => {
+    const duration = process.hrtime(start);
+    const durationInSeconds = duration[0] + duration[1] / 1e9;
+    
+    httpRequestsTotal.inc({ method: req.method, route: req.path, status_code: res.statusCode });
+    httpRequestDurationMicroseconds.observe(
+      { method: req.method, route: req.path, status_code: res.statusCode },
+      durationInSeconds
+    );
+  });
+  
   next();
+});
+
+// Endpoint to expose metrics
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', register.contentType);
+  res.end(await register.metrics());
 });
 
 app.listen(port, '0.0.0.0', () => console.log(`Node App listening on port ${port}!`));

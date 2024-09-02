@@ -18,7 +18,8 @@
     "@opentelemetry/sdk-trace-base": "^1.0.0",
     "@opentelemetry/exporter-zipkin": "^1.0.0",
     "@opentelemetry/sdk-metrics": "^1.0.0",
-    "@opentelemetry/exporter-prometheus": "^0.40.0"
+    "@opentelemetry/exporter-prometheus": "^0.40.0",
+    "prom-client": "^14.0.1"
 
   }
 }
