@@ -14,7 +14,8 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import \
 from opentelemetry.instrumentation.requests import RequestsInstrumentor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.export import (BatchSpanProcessor,
+                                            ConsoleSpanExporter)
 from opentelemetry.semconv.resource import ResourceAttributes
 from prometheus_client import CollectorRegistry, Counter, start_http_server
 
@@ -25,7 +26,7 @@ base_url = f"http://localhost:{dapr_port}/v1.0/invoke"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Set up OpenTelemetry tracing with retry logic
+# Set up OpenTelemetry tracing
 def setup_opentelemetry():
     resource = Resource(attributes={
         ResourceAttributes.SERVICE_NAME: "pythonapp"
@@ -40,7 +41,7 @@ def setup_opentelemetry():
     for attempt in range(max_retries):
         try:
             otlp_exporter = OTLPSpanExporter(
-                endpoint="http://otel-collector:4317",
+                endpoint="http://127.0.0.1:4317",
                 insecure=True
             )
             span_processor = BatchSpanProcessor(otlp_exporter)
@@ -53,6 +54,11 @@ def setup_opentelemetry():
                 time.sleep(retry_delay)
             else:
                 logger.error("Failed to connect to OpenTelemetry Collector after multiple attempts")
+                # Fallback to Console exporter if OTLP exporter fails
+                console_exporter = ConsoleSpanExporter()
+                console_span_processor = BatchSpanProcessor(console_exporter)
+                trace.get_tracer_provider().add_span_processor(console_span_processor)
+                logger.info("Falling back to Console exporter")
 
     return tracer
 

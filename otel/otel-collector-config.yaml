@@ -6,14 +6,10 @@ receivers:
     prometheus:
         config:
             scrape_configs:
-                # - job_name: 'otel-collector'
-                #   scrape_interval: 5s
-                #   static_configs:
-                #     - targets: ['0.0.0.0:8890']  # Changed from 8889 to 8890
                 - job_name: 'dapr'
                   scrape_interval: 5s
                   static_configs:
-                    - targets: ['nodeapp:9091', 'pythonapp:9092']
+                    - targets: ['nodeapp:9091', 'pythonapp:9092', 'audit-service:9091', 'airflow-trigger-service:9095', 'airflow-config-service:9099', 'management-service:9103', 'lineage-service:9107']
     zipkin:
         endpoint: 0.0.0.0:9411
 
@@ -24,16 +20,13 @@ exporters:
     logging:
         loglevel: debug
     prometheus:
-        endpoint: "0.0.0.0:8890"  # Changed from 8889 to 8890
+        endpoint: "0.0.0.0:8890"
     otlp:
         endpoint: "otel-collector:4317"
         tls:
             insecure: true
 
 service:
-    # telemetry:
-        # metrics:
-        #     address: ":8890"  # Changed from 8889 to 8890
     pipelines:
         metrics:
             receivers: [otlp, prometheus]
