@@ -91,6 +91,11 @@ services:
       - placement
     networks:
       - common_network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   audit-service-dapr:
     image: "daprio/daprd:edge"
@@ -118,6 +123,11 @@ services:
       - placement
     networks:
       - common_network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   airflow-trigger-service-dapr:
     image: "daprio/daprd:edge"
@@ -145,6 +155,11 @@ services:
       - placement
     networks:
       - common_network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3002/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   airflow-config-service-dapr:
     image: "daprio/daprd:edge"
@@ -172,6 +187,11 @@ services:
       - placement
     networks:
       - common_network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3003/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   management-service-dapr:
     image: "daprio/daprd:edge"
@@ -199,6 +219,11 @@ services:
       - placement
     networks:
       - common_network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3004/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   lineage-service-dapr:
     image: "daprio/daprd:edge"
@@ -221,17 +246,18 @@ services:
   pythonapp:
     environment:
       PYTHONUNBUFFERED: 1
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://127.0.0.1:4317"
+      OTEL_RESOURCE_ATTRIBUTES: "service.name=pythonapp"
     build: ./dapr/python
-    depends_on:
-      - redis
-      - placement
-      - otel-collector  # Add this line
+    # depends_on:
+      # otel-collector:
+        # condition: service_healthy 
     networks:
       - common_network
     ports:
       - "8501:8501"
-      - "9092:9092"  # Change this to 9092:9092 to expose the correct port
-      - "9094:9094"  # Expose Dapr sidecar metrics port
+      - "9092:9092"
+      - "9094:9094"
 
   pythonapp-dapr:
     image: "daprio/daprd:edge"
@@ -240,7 +266,7 @@ services:
       "-placement-host-address", "placement:50006",
       "-components-path", "/components",
       "-config", "/config/tracing.yaml",
-      "-metrics-port", "9094"]  # Change this to 9094 to match the exposed port
+      "-metrics-port", "9094"]
     volumes:
       - "./dapr/components/:/components"
       - "./dapr/config/:/config"
@@ -301,11 +327,18 @@ services:
     volumes:
       - ./otel/otel-collector-config.yaml:/etc/otel-collector-config.yaml
     ports:
-      - "4317:4317"
-      - "55680:55680"
-      - "8890:8890"  # Changed from 8889 to 8890
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8888:8888"   # Prometheus metrics exposed by the collector
+      - "8889:8889"   # Prometheus exporter metrics
+      - "13133:13133" # Health check extension
     networks:
       - common_network
+    healthcheck:  # Add this healthcheck block
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:13133/"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   ############################
   # Grafana
