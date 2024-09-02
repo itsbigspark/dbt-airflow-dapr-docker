@@ -17,4 +17,4 @@ airflow db upgrade
 sleep 10
 airflow connections add 'dbt_postgres_instance_raw_data' --conn-uri $DBT_POSTGRESQL_CONN
 airflow scheduler & airflow webserver
-airflow users create --username chrs --firstname admin --lastname admin --role Admin --email admin2 
+airflow users create --username airflow_admin --firstname admin --lastname admin --role Admin --email admin2 --password admin
