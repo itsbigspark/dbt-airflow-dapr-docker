@@ -11,7 +11,7 @@ services:
       - 5432
     restart: always
     volumes:
-      - ./scripts_postgres:/docker-entrypoint-initdb.d
+      - ./postgres/scripts:/docker-entrypoint-initdb.d
       # - ./sample_data:/sample_data
     networks:
       - common_network
@@ -33,7 +33,7 @@ services:
       - common_network
 
   airflow:
-    build: .
+    build: ./airflow/
     restart: always
     environment: 
       DBT_PROFILES_DIR: /dbt
@@ -91,11 +91,6 @@ services:
       - placement
     networks:
       - common_network
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
 
   audit-service-dapr:
     image: "daprio/daprd:edge"
@@ -123,11 +118,6 @@ services:
       - placement
     networks:
       - common_network
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3001/"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
 
   airflow-trigger-service-dapr:
     image: "daprio/daprd:edge"
@@ -155,11 +145,6 @@ services:
       - placement
     networks:
       - common_network
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3002/"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
 
   airflow-config-service-dapr:
     image: "daprio/daprd:edge"
@@ -187,11 +172,6 @@ services:
       - placement
     networks:
       - common_network
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3003/"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
 
   management-service-dapr:
     image: "daprio/daprd:edge"
@@ -219,11 +199,6 @@ services:
       - placement
     networks:
       - common_network
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3004/"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
 
   lineage-service-dapr:
     image: "daprio/daprd:edge"
@@ -249,9 +224,6 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://127.0.0.1:4317"
       OTEL_RESOURCE_ATTRIBUTES: "service.name=pythonapp"
     build: ./dapr/python
-    # depends_on:
-      # otel-collector:
-        # condition: service_healthy 
     networks:
       - common_network
     ports:

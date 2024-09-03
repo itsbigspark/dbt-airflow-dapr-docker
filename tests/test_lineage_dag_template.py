@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from airflow.models import DagBag
-from dags.lineage_dag_template import DBTTask, LineageTrackedTask, SparkTask
+from tests.lineage_dag_template import DBTTask, LineageTrackedTask, SparkTask
 
 
 class TestLineageDAG(unittest.TestCase):
