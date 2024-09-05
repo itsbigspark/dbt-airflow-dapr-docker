@@ -29,7 +29,7 @@ scrape_configs:
     static_configs:
       - targets: ['audit-service:9093', 'airflow-trigger-service:9097', 'airflow-config-service:9101', 'management-service:9105', 'pythonapp:9094', 'lineage-service:9109']  # Updated to use the correct hostnames and ports
 
-  - job_name: 'apps'
-    scrape_interval: 5s
-    static_configs:
-      - targets: ['audit-service:9091', 'airflow-trigger-service:9095', 'airflow-config-service:9099', 'management-service:9103', 'pythonapp:9092', 'lineage-service:9107']  # Separate job for app metrics
+  # - job_name: 'apps'
+  #   scrape_interval: 5s
+  #   static_configs:
+  #     - targets: ['audit-service:9091', 'airflow-trigger-service:9095', 'airflow-config-service:9099', 'management-service:9103', 'pythonapp:9092', 'lineage-service:9107']  # Separate job for app metrics
